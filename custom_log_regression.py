@@ -27,7 +27,8 @@ class CustomLogRegression:
         self._clf_params = None
         self._clf = None
     
-    def read_data(self, data_path, y_col, index_col=None, test_size=0.3):
+    def read_data(self, data_path, y_col, index_col=None, skip_cols=None,
+        test_size=0.3):
         """
         Read a csv file with data.
 
@@ -43,6 +44,8 @@ class CustomLogRegression:
         index_col : int, sequence or bool, optional
             Column to use as the row labels of the DataFrame. If a sequence is given,
             MultiIndex is used.
+        skip_cols : list
+            List of features / columns to exclude from the data.
         test_size : float
             Should be between 0.0 and 1.0 and represent the proportion of the dataset
             to include in the test split.
@@ -51,17 +54,20 @@ class CustomLogRegression:
         # drop columns with where N/As constitute around 10% of all entries
         na_max_percent = 0.1
         nas = data.isna().sum()
-        data_cols = set(nas[nas < na_max_percent * len(data)])
+        excessive_na_cols = set(nas[nas > na_max_percent * len(data)].index).union(
+            set(skip_cols)
+        )
+        data_cols = set(data.columns).difference(excessive_na_cols)
 
         if y_col not in data_cols:
             raise ValueError(f'Too many enties without the labels {y_col}')
-        
-        # data_cols.remove(remove(y_col))
 
-        numeric_cols = set(data._get_numeric_data().columns)
+        numeric_cols = set(data._get_numeric_data().columns).difference(
+            excessive_na_cols
+        )
         # since y_col contains 0, 1 it should be numeric
-        numeric_cols.remove(y_col)
         categorical_cols = data_cols - numeric_cols
+        numeric_cols.remove(y_col)
 
         data = data.loc[:, data_cols]
         data = data.dropna()
@@ -71,9 +77,9 @@ class CustomLogRegression:
         # encode categorical variables
         encoder = OneHotEncoder(cols=categorical_cols, use_cat_names=True)
         X = encoder.fit_transform(X)
-        train_test_split()
         data_splits = train_test_split(X, y, test_size=test_size,
             random_state=self._random_state)
+
         return data_splits
 
     def fit(self, X, y):
