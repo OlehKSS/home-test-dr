@@ -1,9 +1,9 @@
 """Prediction class implementation based on logistic regression."""
 
 from category_encoders.one_hot import OneHotEncoder
-import numpy as np
 import pandas as pd
-from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
+import numpy as np
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, log_loss
 from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.pipeline import make_pipeline
@@ -11,24 +11,27 @@ from sklearn.preprocessing import StandardScaler
 
 
 class CustomLogRegression:
-    """
-    Logistic regression with additional methods.
+    """Logistic regression with additional methods."""
 
-    Parameters
-    ----------
-    random_state : int, float
-        Random state to make classifier reproducible. Default is None.
-    n_jobs : int
-        Number of processes to use for the classifier training.    
-    """
     def __init__(self, random_state=None, n_jobs=1):
+        """
+        Initialize the regression model.
+
+        Parameters
+        ----------
+        random_state : int, float
+            Random state to make classifier reproducible. Default is None.
+        n_jobs : int
+            Number of processes to use for the classifier training.
+
+        """
         self._random_state = random_state
         self._n_jobs = n_jobs
         self._clf_params = None
         self._clf = None
-    
+
     def read_data(self, data_path, y_col, index_col=None, skip_cols=None,
-        test_size=0.3):
+                  test_size=0.3):
         """
         Read a csv file with data.
 
@@ -42,21 +45,27 @@ class CustomLogRegression:
         y_col : str
             Ground truth labels with values of 0 and 1.
         index_col : int, sequence or bool, optional
-            Column to use as the row labels of the DataFrame. If a sequence is given,
-            MultiIndex is used.
+            Column to use as the row labels of the DataFrame. If a sequence is
+            given, MultiIndex is used.
         skip_cols : list
             List of features / columns to exclude from the data.
         test_size : float
-            Should be between 0.0 and 1.0 and represent the proportion of the dataset
-            to include in the test split.
+            Should be between 0.0 and 1.0 and represent the proportion of the
+            dataset to include in the test split.
+
+        Returns
+        -------
+        data_splits : list, length = 4
+            List containing train-test split.
+
         """
-        data = pd.read_csv(data_path, index_col=index_col, na_values=['NONE', 'na'])
+        data = pd.read_csv(data_path, index_col=index_col,
+                           na_values=['NONE', 'na'])
         # drop columns with where N/As constitute around 10% of all entries
         na_max_percent = 0.1
         nas = data.isna().sum()
-        excessive_na_cols = set(nas[nas > na_max_percent * len(data)].index).union(
-            set(skip_cols)
-        )
+        excessive_na_cols = set(nas[nas > na_max_percent * len(data)].index)
+        excessive_na_cols = excessive_na_cols.union(set(skip_cols))
         data_cols = set(data.columns).difference(excessive_na_cols)
 
         if y_col not in data_cols:
@@ -78,7 +87,7 @@ class CustomLogRegression:
         encoder = OneHotEncoder(cols=categorical_cols, use_cat_names=True)
         X = encoder.fit_transform(X)
         data_splits = train_test_split(X, y, test_size=test_size,
-            random_state=self._random_state)
+                                       random_state=self._random_state)
 
         return data_splits
 
@@ -92,21 +101,22 @@ class CustomLogRegression:
             Input features.
         y : numpy.array
             Ground truth labels as a numpy array of 0s and 1s.
+
         """
         scaler = StandardScaler()
         scaler.fit(X)
         X_scaled = scaler.transform(X)
 
         if self._clf_params is not None:
-            C = self._clf_params['C']
-        else:
-            C = 1.0
+            C = self._clf_params.get('C', 1.0)
+            solver = self._clf_params.get('solver', 'lbfgs')
 
         self._clf = LogisticRegression(random_state=self._random_state, C=C,
-            solver='lbfgs', class_weight='balanced', n_jobs=self._n_jobs)
+                                       solver=solver, class_weight='balanced',
+                                       n_jobs=self._n_jobs)
 
         self._clf.fit(X_scaled, y)
-    
+
     def predict(self, X):
         """
         Predict class labels on new data.
@@ -115,10 +125,11 @@ class CustomLogRegression:
         ----------
         X : pandas.DataFrame
             Input features.
-        
+
         Returns
         -------
         out : numpy.ndarray
+
         """
         return self._clf.predict(X)
 
@@ -130,10 +141,11 @@ class CustomLogRegression:
         ----------
         X : pandas.DataFrame
             Input features.
-        
+
         Returns
         -------
         proba : numpy.ndarray
+
         """
         return self._clf.predict_proba(X)
 
@@ -152,6 +164,7 @@ class CustomLogRegression:
         -------
         metrics : dict
             {'accuracy': 0.8, 'f1_score': 0.3, 'logloss': 0.7}
+
         """
         metrics = {}
         scaler = StandardScaler()
@@ -164,7 +177,7 @@ class CustomLogRegression:
         metrics['logloss'] = log_loss(y, y_pred)
 
         return metrics
-    
+
     def tune_parameters(self, X, y, n_folds=5):
         """
         Run K-fold cross validation to choose the best parameters.
@@ -182,29 +195,36 @@ class CustomLogRegression:
         -------
         params : dict
             {'tol': 0.02, 'fit_intercept': False, 'solver': 'sag', 'scores':
-                {'f1_score': 0.3, 'logloss': 0.7}}
+                {'accuracy': 0.8, 'f1_score': 0.3, 'logloss': 0.7}}
+
         """
         regularization = np.logspace(-7, 2, 100)
         accuracy_scores = np.zeros_like(regularization)
         f1_scores = np.zeros_like(regularization)
         log_loss_scores = np.zeros_like(regularization)
 
+        solver = 'lbfgs'
+
         for index, c in enumerate(regularization):
             clf = LogisticRegression(random_state=self._random_state, C=c,
-                solver='lbfgs', n_jobs=self._n_jobs, class_weight='balanced')
+                                     solver=solver, n_jobs=self._n_jobs,
+                                     class_weight='balanced')
             estimator = make_pipeline(StandardScaler(), clf)
             _accuracy_scores = cross_val_score(estimator, X, y, cv=n_folds)
-            _f1_scs = cross_val_score(estimator, X, y, cv=n_folds, scoring='f1',
-                n_jobs=self._n_jobs)
-            _log_loss_scs = cross_val_score(estimator, X, y, cv=n_folds, scoring='neg_log_loss',
-                n_jobs=self._n_jobs)
+            _f1_scs = cross_val_score(estimator, X, y, cv=n_folds,
+                                      scoring='f1', n_jobs=self._n_jobs)
+            _log_loss_scs = cross_val_score(estimator, X, y, cv=n_folds,
+                                            scoring='neg_log_loss',
+                                            n_jobs=self._n_jobs)
             accuracy_scores[index] = _accuracy_scores.mean()
             f1_scores[index] = _f1_scs.mean()
             log_loss_scores[index] = -1 * _log_loss_scs.mean()
 
-        scores = {'accuracy': accuracy_scores, 'f1_score': f1_scores, 'logloss': log_loss_scores}
-        params = {'C': regularization[np.argmax(f1_scores)], 'scores': scores}
+        scores = {'accuracy': accuracy_scores, 'f1_score': f1_scores,
+                  'logloss': log_loss_scores}
+        params = {'solver': solver,
+                  'C': regularization[np.argmax(f1_scores)],
+                  'scores': scores}
         self._clf_params = {'C': regularization[np.argmax(f1_scores)]}
 
         return params
-            
