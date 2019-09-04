@@ -1,4 +1,4 @@
-name: home-test-dr
+name: custom-log-regression
 channels:
   - conda-forge
   - defaults
@@ -10,3 +10,5 @@ dependencies:
   - pytest
   - scikit-learn
   - category_encoders=2.0.0
+  - pydocstyle
+  - flake8
